@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Generative Gallery</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400&family=Libre+Franklin:wght@300;400;500&display=swap" rel="stylesheet">
+
+<!-- p5.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<style>
+  /* ══════════════════════════════════════════════════════════
+     GLOBAL STYLES
+  ══════════════════════════════════════════════════════════ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { 
+    background: #000; 
+    overflow: hidden; 
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  
+  #canvas-container { 
+    position: absolute; 
+    top: 0; left: 0; 
+    width: 100vw; height: 100vh; 
+    z-index: 1;
+  }
+  canvas { display: block; }
+  #input_video { display: none; }
+
+  /* ══════════════════════════════════════════════════════════
+     LANDING PAGE
+  ══════════════════════════════════════════════════════════ */
+  #landing {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);
+    color: #1a1a1a;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6vh 0;
+    transition: transform 1.2s cubic-bezier(0.65, 0, 0.15, 1);
+    will-change: transform;
+  }
+
+  .landing-top {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 400;
+    letter-spacing: 0.25em;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+
+  .landing-center { text-align: center; }
+
+  .landing-title {
+    font-family: 'Libre Franklin', sans-serif;
+    font-size: clamp(3rem, 6vw, 5rem);
+    font-weight: 300;
+    line-height: 1.1;
+    letter-spacing: 0.05em;
+  }
+
+  .landing-bottom {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    opacity: 0.7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    animation: bounceSubtle 2s infinite ease-in-out;
+  }
+
+  @keyframes bounceSubtle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(6px); }
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     MAIN GALLERY UI
+  ══════════════════════════════════════════════════════════ */
+  #main-ui {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 32px 40px;
+    opacity: 0;
+    transition: opacity 0.8s ease 0.6s;
+  }
+
+  #main-ui.visible { opacity: 1; }
+
+  .ui-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  .ui-group {
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+  }
+
+  .pill-btn {
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 0 6px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    padding: 10px 24px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background 0.2s ease, border-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pill-btn:hover {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .pill-btn.recording {
+    color: #FF2D55;
+    border-color: rgba(255, 45, 85, 0.5);
+  }
+
+  .dropdown-wrapper { position: relative; pointer-events: auto; }
+  
+  .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 12px);
+    left: 0;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    min-width: 200px;
+    padding: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dropdown-wrapper.open .dropdown-menu {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .radio-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 0 6px rgba(0,0,0,0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .radio-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
+  .radio-option.active { color: #fff; }
+
+  .radio-circle {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s ease;
+  }
+
+  .radio-option.active .radio-circle { border-color: #fff; }
+
+  .radio-circle::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #fff;
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s ease;
+  }
+
+  .radio-option.active .radio-circle::after {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  #custom-color-panel { display: none; }
+  
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 8px;
+    justify-items: center;
+  }
+
+  .color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .color-swatch:hover { border-color: rgba(255, 255, 255, 0.5); }
+  .color-swatch.filled { border: 1px solid rgba(255, 255, 255, 0.3); }
+
+  .reset-btn {
+    width: calc(100% - 32px);
+    margin: 0 16px 16px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.2s;
+  }
+
+  .reset-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+
+  .bottom-bar {
+    justify-content: center;
+    align-items: flex-end;
+  }
+
+  .instruction-box {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    padding: 14px 24px;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    pointer-events: auto;
+  }
+
+  .instruction-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 0 6px rgba(0,0,0,0.3);
+    text-transform: uppercase;
+  }
+
+  .instruction-highlight { color: #fff; }
+  .instruction-separator { color: rgba(255, 255, 255, 0.4); }
+</style>
+</head>
+<body>
+
+<video id="input_video" autoplay muted playsinline></video>
+<div id="canvas-container"></div>
+
+<div id="landing">
+  <div class="landing-top">BY @THEMANASSHAH</div>
+  <div class="landing-center">
+    <div class="landing-title">GENERATIVE<br>GALLERY</div>
+  </div>
+  <div class="landing-bottom">
+    <span>SCROLL UP TO ENTER</span>
+    <span>↓</span>
+  </div>
+</div>
+
+<div id="main-ui">
+  <div class="ui-bar">
+    <div class="ui-group">
+      <div class="dropdown-wrapper" id="bg-dropdown">
+        <button class="pill-btn" id="btn-change-bg">CHANGE BACKGROUND</button>
+        <div class="dropdown-menu">
+          <div class="radio-option active" data-bg="camera"><span>Camera</span><div class="radio-circle"></div></div>
+          <div class="radio-option" data-bg="black"><span>Black</span><div class="radio-circle"></div></div>
+          <div class="radio-option" data-bg="grey"><span>Grey</span><div class="radio-circle"></div></div>
+          <div class="radio-option" data-bg="white"><span>White</span><div class="radio-circle"></div></div>
+        </div>
+      </div>
+
+      <div class="dropdown-wrapper" id="color-dropdown">
+        <button class="pill-btn" id="btn-color-mode">COLOR MODE</button>
+        <div class="dropdown-menu">
+          <div class="radio-option active" data-mode="auto"><span>Automatic</span><div class="radio-circle"></div></div>
+          <div class="radio-option" data-mode="custom"><span>Custom</span><div class="radio-circle"></div></div>
+          
+          <div id="custom-color-panel">
+            <div class="color-grid" id="color-grid"></div>
+            <button class="reset-btn" id="btn-reset-colors">RESET</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ui-group">
+      <button class="pill-btn" id="btn-save">SAVE IMAGE</button>
+      <button class="pill-btn" id="btn-record">RECORD VIDEO</button>
+    </div>
+  </div>
+
+  <div class="ui-bar bottom-bar">
+    <div class="instruction-box">
+      <span class="instruction-text">
+        R: PINCH TO DRAW &nbsp;&nbsp;&nbsp;&nbsp; L: PINCH TO MOVE
+      </span>
+      <span class="instruction-text instruction-separator">|</span>
+      <span class="instruction-text instruction-highlight">C - CLEAR</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  UI INTEGRATION LOGIC
+// ══════════════════════════════════════════════════════════
+window.APP_STATE = {
+  bgMode: 'camera', 
+  colorMode: 'auto', 
+  customPalette: new Array(12).fill(null), 
+  triggerSave: null
+};
+
+let landingHidden = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isVideoRecording = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const landing = document.getElementById('landing');
+  const mainUi = document.getElementById('main-ui');
+
+  const hideLanding = () => {
+    if (landingHidden) return;
+    landingHidden = true;
+    landing.style.transform = 'translateY(-100vh)';
+    mainUi.classList.add('visible');
+  };
+
+  window.addEventListener('wheel', (e) => { if (e.deltaY > 0) hideLanding(); });
+
+  let touchStartY = 0;
+  window.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
+  window.addEventListener('touchmove', (e) => {
+    if (touchStartY - e.touches[0].clientY > 40) hideLanding();
+  }, { passive: true });
+
+  const bgDropdown = document.getElementById('bg-dropdown');
+  const colorDropdown = document.getElementById('color-dropdown');
+
+  document.getElementById('btn-change-bg').addEventListener('click', (e) => {
+    e.stopPropagation();
+    colorDropdown.classList.remove('open');
+    bgDropdown.classList.toggle('open');
+  });
+
+  document.getElementById('btn-color-mode').addEventListener('click', (e) => {
+    e.stopPropagation();
+    bgDropdown.classList.remove('open');
+    colorDropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => {
+    bgDropdown.classList.remove('open');
+    colorDropdown.classList.remove('open');
+  });
+
+  document.querySelectorAll('.dropdown-menu').forEach(menu => {
+    menu.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  const bgRadios = document.querySelectorAll('#bg-dropdown .radio-option');
+  bgRadios.forEach(option => {
+    option.addEventListener('click', () => {
+      bgRadios.forEach(opt => opt.classList.remove('active'));
+      option.classList.add('active');
+      window.APP_STATE.bgMode = option.getAttribute('data-bg');
+      setTimeout(() => bgDropdown.classList.remove('open'), 150);
+    });
+  });
+
+  const colorRadios = document.querySelectorAll('#color-dropdown .radio-option');
+  const customPanel = document.getElementById('custom-color-panel');
+  const colorGrid = document.getElementById('color-grid');
+  
+  colorRadios.forEach(option => {
+    option.addEventListener('click', () => {
+      colorRadios.forEach(opt => opt.classList.remove('active'));
+      option.classList.add('active');
+      window.APP_STATE.colorMode = option.getAttribute('data-mode');
+      
+      if (window.APP_STATE.colorMode === 'custom') {
+        customPanel.style.display = 'block';
+      } else {
+        customPanel.style.display = 'none';
+        setTimeout(() => colorDropdown.classList.remove('open'), 150);
+      }
+    });
+  });
+
+  for(let i = 0; i < 12; i++) {
+    let sw = document.createElement('div');
+    sw.className = 'color-swatch';
+    sw.dataset.index = i;
+    colorGrid.appendChild(sw);
+  }
+
+  const hiddenPicker = document.createElement('input');
+  hiddenPicker.type = 'color';
+  hiddenPicker.style.display = 'none';
+  document.body.appendChild(hiddenPicker);
+
+  let activeSwatchIndex = null;
+
+  colorGrid.addEventListener('click', (e) => {
+    if(e.target.classList.contains('color-swatch')) {
+      activeSwatchIndex = e.target.dataset.index;
+      let existingColor = window.APP_STATE.customPalette[activeSwatchIndex];
+      hiddenPicker.value = existingColor ? existingColor : "#ffffff";
+      hiddenPicker.click();
+    }
+  });
+
+  hiddenPicker.addEventListener('input', (e) => {
+    if(activeSwatchIndex !== null) {
+      let color = e.target.value;
+      window.APP_STATE.customPalette[activeSwatchIndex] = color;
+      let sw = colorGrid.children[activeSwatchIndex];
+      sw.style.background = color;
+      sw.classList.add('filled');
+    }
+  });
+
+  document.getElementById('btn-reset-colors').addEventListener('click', () => {
+    window.APP_STATE.customPalette = new Array(12).fill(null);
+    Array.from(colorGrid.children).forEach(sw => {
+      sw.style.background = 'transparent';
+      sw.classList.remove('filled');
+    });
+    document.querySelector('.radio-option[data-mode="auto"]').click();
+  });
+
+  document.getElementById('btn-save').addEventListener('click', () => {
+    if (window.APP_STATE.triggerSave) window.APP_STATE.triggerSave();
+  });
+
+  document.getElementById('btn-record').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    if (!isVideoRecording) {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return;
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mediaRecorder.ondataavailable = event => { if (event.data.size > 0) recordedChunks.push(event.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `generative_gallery_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        recordedChunks = [];
+      };
+      mediaRecorder.start();
+      isVideoRecording = true;
+      btn.innerHTML = 'STOP RECORDING';
+      btn.classList.add('recording');
+    } else {
+      mediaRecorder.stop();
+      isVideoRecording = false;
+      btn.innerHTML = 'RECORD VIDEO';
+      btn.classList.remove('recording');
+    }
+  });
+});
+
+// ══════════════════════════════════════════════════════════
+//  GLSL SHADERS (Untouched)
+// ══════════════════════════════════════════════════════════
+const vertCode = `
+  attribute vec3 aPosition;
+  varying vec2 vTexCoord;
+  void main() {
+    vTexCoord = (aPosition.xy + 1.0) * 0.5;
+    vTexCoord.y = 1.0 - vTexCoord.y; 
+    gl_Position = vec4(aPosition, 1.0);
+  }
+`;
+
+const fragCode = `
+  precision highp float;
+  varying vec2 vTexCoord;
+  
+  uniform vec2 u_res;
+  uniform float u_time;
+  uniform int u_mode;
+  uniform vec4 u_p;   
+  uniform vec3 u_c1;  
+  uniform vec3 u_c2;  
+  uniform vec3 u_c3;  
+
+  vec2 random2(vec2 st){
+      st = vec2( dot(st,vec2(127.1,311.7)), dot(st,vec2(269.5,183.3)) );
+      return -1.0 + 2.0*fract(sin(st)*43758.5453123);
+  }
+  
+  float noise(vec2 st) {
+      vec2 i = floor(st);
+      vec2 f = fract(st);
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix( mix( dot( random2(i + vec2(0.0,0.0) ), f - vec2(0.0,0.0) ),
+                       dot( random2(i + vec2(1.0,0.0) ), f - vec2(1.0,0.0) ), u.x),
+                  mix( dot( random2(i + vec2(0.0,1.0) ), f - vec2(0.0,1.0) ),
+                       dot( random2(i + vec2(1.0,1.0) ), f - vec2(1.0,1.0) ), u.x), u.y);
+  }
+
+  void main() {
+    vec2 st = vTexCoord * u_res / 80.0;
+    float n = noise(st * 0.5 + u_time * 0.2) * 0.5;
+    st += n;
+    float val = 0.0;
+
+    if (u_mode == 0) {
+      val = sin(st.x * u_p.x + u_time) + cos(st.y * u_p.y + u_time * 0.7);
+      val = val * 0.5 + 0.5;
+    } else if (u_mode == 1) {
+      float l1 = sin(u_p.x * st.x + u_time);
+      float l2 = sin(u_p.y * st.y - u_time * 0.8);
+      val = l1 * l2 * 0.5 + 0.5;
+    } else if (u_mode == 2) {
+      vec2 center = (u_res / 80.0) * 0.5;
+      vec2 diff = st - center;
+      float r = length(diff);
+      float theta = atan(diff.y, diff.x);
+      val = sin(r * u_p.x - u_time * 2.0) * cos(theta * u_p.y);
+      val = val * 0.5 + 0.5;
+    } else if (u_mode == 3) {
+      vec2 st2 = st * u_p.x;
+      val = sin(st2.x + u_time) * cos(st2.y + u_time) 
+          + 0.5 * sin(2.0 * st2.x - u_time) * cos(2.0 * st2.y - u_time)
+          + 0.25 * sin(4.0 * st2.x + u_time);
+      val = val * 0.4 + 0.5;
+    } else if (u_mode == 4) {
+      vec2 center = (u_res / 80.0) * 0.5;
+      float d = length(st - center);
+      val = fract(d * u_p.x - u_time * u_p.y);
+    } else {
+      float w1 = sin(st.x * u_p.x + u_time);
+      float w2 = sin(st.y * u_p.y - u_time);
+      float w3 = sin((st.x + st.y) * u_p.z + u_time * 1.5);
+      val = (w1 + w2 + w3) / 3.0;
+      val = val * 0.5 + 0.5;
+    }
+
+    val = smoothstep(-0.2, 1.2, val);
+    vec3 color = mix(u_c1, u_c2, smoothstep(0.1, 0.6, val));
+    color = mix(color, u_c3, smoothstep(0.4, 0.9, val));
+
+    float grain = fract(sin(dot(vTexCoord.xy, vec2(12.9898,78.233))) * 43758.5453);
+    color -= grain * 0.04;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// ══════════════════════════════════════════════════════════
+//  SKETCH GLOBALS & STATE
+// ══════════════════════════════════════════════════════════
+let drawHandLandmarks = null; // Right Hand = Draw
+let moveHandLandmarks = null; // Left Hand = Move
+const videoEl = document.getElementById('input_video');
+
+const GRID_SIZE = 20;           
+const STEP_THRESHOLD = 32;      
+const PINCH_THRESHOLD = 15;     
+const CLOSE_THRESHOLD = 50;     
+const MIN_POINTS = 4;           
+
+const PALETTE = [
+  '#FF2D55', '#FF9F0A', '#FFD60A', '#34C759',
+  '#5AC8FA', '#007AFF', '#BF5AF2', '#FF6B6B',
+  '#000000', '#FFFFFF'
+];
+
+function hexToRgb(hex) {
+  let c = hex.substring(1).split('');
+  if (c.length === 3) c = [c[0], c[0], c[1], c[1], c[2], c[2]];
+  c = '0x' + c.join('');
+  return [((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255];
+}
+function snap(val) { return Math.round(val / GRID_SIZE) * GRID_SIZE; }
+
+function ccw(A, B, C) {
+  return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+}
+function intersects(A, B, C, D) {
+  return ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D);
+}
+function doesIntersectSelf(p1, p2, pts) {
+  if (pts.length < 4) return false;
+  for (let i = 0; i < pts.length - 2; i++) {
+    if (intersects(p1, p2, pts[i], pts[i+1])) return true;
+  }
+  return false;
+}
+
+function pointInPolygon(pt, poly) {
+  let x = pt.x, y = pt.y;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    let xi = poly[i].x, yi = poly[i].y;
+    let xj = poly[j].x, yj = poly[j].y;
+    let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// ══════════════════════════════════════════════════════════
+//  MEDIAPIPE SETUP
+// ══════════════════════════════════════════════════════════
+const mpHands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+mpHands.setOptions({
+  maxNumHands: 2, 
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7, 
+  minTrackingConfidence: 0.6
+});
+mpHands.onResults(r => {
+  drawHandLandmarks = null;
+  moveHandLandmarks = null;
+  if (r.multiHandLandmarks && r.multiHandedness) {
+    for (let i = 0; i < r.multiHandLandmarks.length; i++) {
+      let label = r.multiHandedness[i].label; // MediaPipe label
+      if (label === 'Right') drawHandLandmarks = r.multiHandLandmarks[i];
+      else if (label === 'Left') moveHandLandmarks = r.multiHandLandmarks[i];
+    }
+  }
+});
+
+const cam = new Camera(videoEl, {
+  onFrame: async () => { await mpHands.send({ image: videoEl }); },
+  width: 1280, height: 720
+});
+cam.start().catch(err => console.error("Camera Denied", err));
+
+// ══════════════════════════════════════════════════════════
+//  P5.JS CORE SKETCH
+// ══════════════════════════════════════════════════════════
+new p5(function(p) {
+
+  let shapes = [];
+  
+  // Right Hand State (Drawing)
+  let isDrawing = false;
+  let drawPrevPinchDist = 1000;
+  let drawPinchFrames = 0;
+  let handledPinch = false; 
+  let livePts = [];
+  let drawSmoothedFx = null;
+  let drawSmoothedFy = null;
+
+  // Left Hand State (Interaction)
+  let isDragging = false;
+  let moveSmoothedFx = null;
+  let moveSmoothedFy = null;
+  let movePrevFx = null;
+  let movePrevFy = null;
+  let movePrevPinchDist = 1000;
+  let movePinchFrames = 0;
+  let hoveredShape = null;
+  let selectedShape = null;
+
+  let mathShader;
+  let shaderGraphics;
+
+  p.setup = function() {
+    const cnv = p.createCanvas(window.innerWidth, window.innerHeight);
+    cnv.parent('canvas-container');
+    p.noSmooth(); 
+
+    shaderGraphics = p.createGraphics(p.width, p.height, p.WEBGL);
+    mathShader = shaderGraphics.createShader(vertCode, fragCode);
+
+    window.APP_STATE.triggerSave = () => {
+      p.saveCanvas('generative_gallery_' + Date.now(), 'png');
+    };
+  };
+
+  p.windowResized = function() {
+    p.resizeCanvas(window.innerWidth, window.innerHeight);
+    shaderGraphics.resizeCanvas(window.innerWidth, window.innerHeight);
+  };
+
+  p.draw = function() {
+    p.clear();
+    
+    // ── 1. Background Render ─────────────
+    p.push();
+    if (window.APP_STATE.bgMode === 'camera') {
+      p.translate(p.width, 0);
+      p.scale(-1, 1);
+      if (videoEl.videoWidth > 0) {
+        p.drawingContext.drawImage(videoEl, 0, 0, p.width, p.height);
+      }
+    } else if (window.APP_STATE.bgMode === 'black') {
+      p.background(0); 
+    } else if (window.APP_STATE.bgMode === 'grey') {
+      p.background(40); 
+    } else if (window.APP_STATE.bgMode === 'white') {
+      p.background(245); 
+    }
+    p.pop();
+
+    // ── 2A. DRAWING LOGIC (Right Hand ONLY) ────────────────────
+    if (drawHandLandmarks) {
+      const thumb = drawHandLandmarks[4];
+      const index = drawHandLandmarks[8];
+      
+      let rawFx = (1 - index.x) * p.width; 
+      let rawFy = index.y * p.height;
+      let rawTx = (1 - thumb.x) * p.width;
+      let rawTy = thumb.y * p.height;
+
+      if (drawSmoothedFx === null) {
+        drawSmoothedFx = rawFx;
+        drawSmoothedFy = rawFy;
+      } else {
+        drawSmoothedFx = p.lerp(drawSmoothedFx, rawFx, 0.5); // Highly responsive
+        drawSmoothedFy = p.lerp(drawSmoothedFy, rawFy, 0.5);
+      }
+
+      // ── STRICT PINCH ──
+      let pinchDistance = p.dist(rawFx, rawFy, rawTx, rawTy);
+      let zDist = Math.abs(index.z - thumb.z);
+      let isPinching = pinchDistance < PINCH_THRESHOLD && zDist < 0.08;
+      let pinchStable = Math.abs(drawPrevPinchDist - pinchDistance) < 6; 
+      drawPrevPinchDist = pinchDistance;
+
+      if (isPinching && pinchStable) {
+        drawPinchFrames++;
+      } else if (pinchDistance > PINCH_THRESHOLD + 5 || zDist >= 0.08) {
+        drawPinchFrames = 0;
+        handledPinch = false; 
+      }
+
+      // ── DRAWING LOGIC ──
+      if (drawSmoothedFx !== null) {
+        let sfx = snap(drawSmoothedFx);
+        let sfy = snap(drawSmoothedFy);
+
+        if (!isDrawing) {
+          if (drawPinchFrames > 2 && !handledPinch && !isDragging) { 
+            handledPinch = true; 
+            isDrawing = true;
+            livePts = [{x: sfx, y: sfy}];
+          }
+        } else {
+          let firstPt = livePts[0];
+          let lastPt = livePts[livePts.length - 1];
+          let distToStart = p.dist(sfx, sfy, firstPt.x, firstPt.y);
+
+          if (livePts.length >= MIN_POINTS && distToStart < CLOSE_THRESHOLD) {
+            if (lastPt.x !== firstPt.x && lastPt.y !== firstPt.y) {
+              if (Math.abs(lastPt.x - firstPt.x) > Math.abs(lastPt.y - firstPt.y)) {
+                livePts.push({x: firstPt.x, y: lastPt.y});
+              } else {
+                livePts.push({x: lastPt.x, y: firstPt.y});
+              }
+            }
+            livePts.push({x: firstPt.x, y: firstPt.y});
+            finalizeShape();
+          } 
+          else {
+            let dx = sfx - lastPt.x;
+            let dy = sfy - lastPt.y;
+
+            if (Math.abs(dx) > STEP_THRESHOLD || Math.abs(dy) > STEP_THRESHOLD) {
+              let intendedDir = Math.abs(dx) > Math.abs(dy) ? 'H' : 'V';
+              let newPt = {x: lastPt.x, y: lastPt.y};
+              
+              if (intendedDir === 'H') newPt.x = sfx;
+              else newPt.y = sfy;
+
+              if (intendedDir === 'H' && Math.abs(newPt.x - lastPt.x) < STEP_THRESHOLD) return;
+              if (intendedDir === 'V' && Math.abs(newPt.y - lastPt.y) < STEP_THRESHOLD) return;
+
+              if (!doesIntersectSelf(lastPt, newPt, livePts)) {
+                if (livePts.length >= 2) {
+                  let prevPt = livePts[livePts.length - 2];
+                  let currentDir = (lastPt.y === prevPt.y) ? 'H' : 'V';
+                  
+                  if (currentDir === intendedDir) {
+                    livePts[livePts.length - 1] = newPt;
+                  } else {
+                    livePts.push(newPt);
+                  }
+                } else {
+                  livePts.push(newPt);
+                }
+              }
+            }
+          }
+        }
+      }
+    } else {
+      drawSmoothedFx = null;
+      drawSmoothedFy = null;
+      drawPinchFrames = 0;
+    }
+
+    // ── 2B. MOVEMENT LOGIC (Left Hand ONLY) ─────────────
+    if (moveHandLandmarks) {
+      const index = moveHandLandmarks[8];
+      const thumb = moveHandLandmarks[4];
+
+      let rawFx = (1 - index.x) * p.width;
+      let rawFy = index.y * p.height;
+      let rawTx = (1 - thumb.x) * p.width;
+      let rawTy = thumb.y * p.height;
+
+      if (moveSmoothedFx === null) {
+        moveSmoothedFx = rawFx;
+        moveSmoothedFy = rawFy;
+        movePrevFx = rawFx;
+        movePrevFy = rawFy;
+      } else {
+        moveSmoothedFx = p.lerp(moveSmoothedFx, rawFx, 0.5); // Highly responsive
+        moveSmoothedFy = p.lerp(moveSmoothedFy, rawFy, 0.5);
+      }
+
+      let pinchDist = p.dist(rawFx, rawFy, rawTx, rawTy);
+      let zDist = Math.abs(index.z - thumb.z);
+      let isPinching = pinchDist < PINCH_THRESHOLD && zDist < 0.08;
+      let pinchStable = Math.abs(movePrevPinchDist - pinchDist) < 6;
+      movePrevPinchDist = pinchDist;
+
+      if (isPinching && pinchStable) {
+        movePinchFrames++;
+      } else if (pinchDist > PINCH_THRESHOLD + 5 || zDist >= 0.08) {
+        movePinchFrames = 0;
+        isDragging = false;
+        selectedShape = null;
+      }
+
+      // Hover Check (Expanded for easier grabbing, skipped if dragging)
+      if (!isDragging) {
+        hoveredShape = null;
+        for (let i = shapes.length - 1; i >= 0; i--) {
+          let hitPoly = getOffsetPolygon(shapes[i].pts, 15); // Hit tolerance
+          if (pointInPolygon({x: moveSmoothedFx, y: moveSmoothedFy}, hitPoly)) {
+            hoveredShape = shapes[i];
+            break;
+          }
+        }
+      }
+
+      if (movePinchFrames > 2 && hoveredShape && !isDragging && !isDrawing) {
+        isDragging = true;
+        selectedShape = hoveredShape;
+      }
+
+      // Smooth Delta Movement 
+      if (isDragging && selectedShape && movePrevFx !== null) {
+        let dx = moveSmoothedFx - movePrevFx;
+        let dy = moveSmoothedFy - movePrevFy;
+        
+        for (let pt of selectedShape.pts) {
+          pt.x += dx;
+          pt.y += dy;
+        }
+      }
+
+      movePrevFx = moveSmoothedFx;
+      movePrevFy = moveSmoothedFy;
+    } else {
+      moveSmoothedFx = null;
+      moveSmoothedFy = null;
+      movePrevFx = null;
+      movePrevFy = null;
+      movePinchFrames = 0;
+      isDragging = false;
+      selectedShape = null;
+      hoveredShape = null;
+    }
+
+    // ── 3. Render Completed Shapes ──────────────────────────
+    for (let sh of shapes) {
+      renderShape(sh);
+    }
+
+    // ── Left Hand Visual Feedback (Hover & Select Glow) ────
+    if (hoveredShape || selectedShape) {
+      let sh = selectedShape ? selectedShape : hoveredShape;
+      p.push();
+      let ctx = p.drawingContext;
+      ctx.beginPath();
+      ctx.moveTo(sh.pts[0].x, sh.pts[0].y);
+      for(let j=1; j<sh.pts.length; j++) ctx.lineTo(sh.pts[j].x, sh.pts[j].y);
+      ctx.closePath();
+      
+      ctx.strokeStyle = isDragging ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = isDragging ? 4 : 2;
+      ctx.lineJoin = 'miter';
+      ctx.stroke();
+      p.pop();
+    }
+
+    // ── 4. Render Live Shape Outline ────────────────────────
+    if (isDrawing && livePts.length > 0) {
+      p.push();
+      p.fill(255, 255, 255, 40);
+      p.stroke(255);
+      p.strokeWeight(2);
+      
+      p.beginShape();
+      for (let pt of livePts) p.vertex(pt.x, pt.y);
+      
+      if (drawSmoothedFx !== null) {
+        let sfx = snap(drawSmoothedFx);
+        let sfy = snap(drawSmoothedFy);
+        let lastPt = livePts[livePts.length - 1];
+        let dx = sfx - lastPt.x;
+        let dy = sfy - lastPt.y;
+        
+        if (livePts.length >= MIN_POINTS && p.dist(sfx, sfy, livePts[0].x, livePts[0].y) < CLOSE_THRESHOLD) {
+           p.vertex(livePts[0].x, livePts[0].y); 
+           p.fill('#34C759'); 
+           p.ellipse(livePts[0].x, livePts[0].y, 24, 24); 
+        } else {
+           if (Math.abs(dx) > Math.abs(dy)) {
+             p.vertex(sfx, lastPt.y);
+           } else {
+             p.vertex(lastPt.x, sfy);
+           }
+        }
+      }
+      p.endShape();
+      p.pop();
+    }
+
+    // ── Visual Polish: Pointer Trackers ─────────────
+    
+    // Drawing Hand Pointer (Right Hand)
+    if (drawSmoothedFx !== null) {
+      p.noStroke();
+      p.fill(isDrawing ? '#34C759' : '#FF2D55');
+      p.ellipse(drawSmoothedFx, drawSmoothedFy, 12, 12);
+    }
+
+    // Moving Hand Pointer (Left Hand)
+    if (moveSmoothedFx !== null) {
+      p.noStroke();
+      p.fill(isDragging ? '#5AC8FA' : '#FFFFFF'); 
+      let ptSize = isDragging ? 16 : 12;
+      p.ellipse(moveSmoothedFx, moveSmoothedFy, ptSize, ptSize);
+    }
+
+  };
+
+  // ══════════════════════════════════════════════════════════
+  //  SHAPE GENERATION
+  // ══════════════════════════════════════════════════════════
+  function finalizeShape() {
+    isDrawing = false; 
+    
+    let mode = p.floor(p.random(6)); 
+    let params = [
+      p.random(1.0, 6.0), p.random(1.0, 6.0), 
+      p.random(1.0, 6.0), p.random(0.5, 2.0)  
+    ];
+
+    let activeColors = window.APP_STATE.customPalette.filter(c => c !== null);
+    let paletteToUse = PALETTE; 
+    
+    if (window.APP_STATE.colorMode === 'custom' && activeColors.length >= 2) {
+      paletteToUse = activeColors;
+    }
+
+    let shuffled = [...paletteToUse].sort(() => 0.5 - Math.random());
+    
+    let col1 = shuffled[0];
+    let col2 = shuffled[1 % shuffled.length];
+    let col3 = shuffled[2 % shuffled.length];
+    
+    shapes.push({
+      pts: [...livePts],
+      mode: mode,
+      params: params,
+      c1: hexToRgb(col1),
+      c2: hexToRgb(col2),
+      c3: hexToRgb(col3)
+    });
+
+    livePts = [];
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  GEOMETRIC OFFSET MATH
+  // ══════════════════════════════════════════════════════════
+  function getOffsetPolygon(pts, offset) {
+    let area = 0;
+    let n = pts.length;
+    for(let i=0; i<n; i++) {
+        let p1 = pts[i];
+        let p2 = pts[(i+1)%n];
+        area += (p1.x * p2.y) - (p2.x * p1.y); 
+    }
+    let isCW = area > 0;
+    
+    let offsetPts = [];
+    for (let i = 0; i < n; i++) {
+        let p0 = pts[(i - 1 + n) % n];
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % n];
+        
+        let d1x = p1.x - p0.x, d1y = p1.y - p0.y;
+        let l1 = Math.hypot(d1x, d1y);
+        if(l1>0){ d1x/=l1; d1y/=l1; }
+        
+        let d2x = p2.x - p1.x, d2y = p2.y - p1.y;
+        let l2 = Math.hypot(d2x, d2y);
+        if(l2>0){ d2x/=l2; d2y/=l2; }
+        
+        let n1x = isCW ? d1y : -d1y;
+        let n1y = isCW ? -d1x : d1x;
+        let n2x = isCW ? d2y : -d2y;
+        let n2y = isCW ? -d2x : d2x;
+        
+        let nx = n1x + n2x;
+        let ny = n1y + n2y;
+        let nLen = Math.hypot(nx, ny);
+        
+        if (nLen < 0.0001) {
+            nx = n1x; ny = n1y;
+        } else {
+            nx /= nLen; ny /= nLen;
+            let dot = nx * n1x + ny * n1y;
+            if (dot > 0.001) { nx /= dot; ny /= dot; } 
+        }
+        
+        offsetPts.push({ x: p1.x + nx * offset, y: p1.y + ny * offset });
+    }
+    return offsetPts;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  RENDERING METALLIC FRAME
+  // ══════════════════════════════════════════════════════════
+  function renderShape(sh) {
+    shaderGraphics.shader(mathShader);
+    mathShader.setUniform('u_res', [p.width, p.height]);
+    mathShader.setUniform('u_time', p.frameCount * 0.015 * sh.params[3]);
+    mathShader.setUniform('u_mode', sh.mode);
+    mathShader.setUniform('u_p', sh.params);
+    mathShader.setUniform('u_c1', sh.c1);
+    mathShader.setUniform('u_c2', sh.c2);
+    mathShader.setUniform('u_c3', sh.c3);
+
+    shaderGraphics.quad(-1, -1, 1, -1, 1, 1, -1, 1);
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let pt of sh.pts) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+
+    p.push();
+    let ctx = p.drawingContext;
+    
+    ctx.beginPath();
+    ctx.moveTo(sh.pts[0].x, sh.pts[0].y);
+    for (let i = 1; i < sh.pts.length; i++) ctx.lineTo(sh.pts[i].x, sh.pts[i].y);
+    ctx.closePath();
+    
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.shadowColor = 'transparent'; 
+
+    let insetPts = getOffsetPolygon(sh.pts, -1.5); 
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(insetPts[0].x, insetPts[0].y);
+    for (let i = 1; i < insetPts.length; i++) ctx.lineTo(insetPts[i].x, insetPts[i].y);
+    ctx.closePath();
+    ctx.clip();
+    p.image(shaderGraphics, 0, 0);
+    ctx.restore();
+
+    // ── Layer 3: Inner Sharp Dark Line (Important Detail) ──
+    ctx.strokeStyle = '#141414'; 
+    ctx.lineWidth = 1.0; 
+    ctx.lineJoin = 'miter';
+    ctx.beginPath();
+    ctx.moveTo(insetPts[0].x, insetPts[0].y);
+    for (let i = 1; i < insetPts.length; i++) ctx.lineTo(insetPts[i].x, insetPts[i].y);
+    ctx.closePath();
+    ctx.stroke();
+
+    // ── Layer 4: Outer Metallic Gradient Border Steps ──
+    let borderSteps = 2; // 50% thinner
+    for (let i = 0; i < borderSteps; i++) {
+      let t = i / borderSteps;
+      let shade = p.map(t, 0, 1, 230, 80); 
+      
+      let grad = ctx.createLinearGradient(minX, minY, maxX, maxY);
+      grad.addColorStop(0, `rgb(${shade + 40}, ${shade + 40}, ${shade + 40})`);
+      grad.addColorStop(1, `rgb(${shade - 40}, ${shade - 40}, ${shade - 40})`);
+      
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 0.75; 
+      
+      let offPts = getOffsetPolygon(sh.pts, i * 0.3); // 50% tighter offset scale
+      
+      ctx.beginPath();
+      ctx.moveTo(offPts[0].x, offPts[0].y);
+      for(let j=1; j<offPts.length; j++) ctx.lineTo(offPts[j].x, offPts[j].y);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    
+    p.pop();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  KEYBOARD CONTROLS 
+  // ══════════════════════════════════════════════════════════
+  p.keyPressed = function() {
+    if (p.key === 'c' || p.key === 'C') {
+      shapes = [];
+      livePts = [];
+      isDrawing = false;
+      handledPinch = false;
+      shaderGraphics.clear(); 
+    }
+  };
+
+}); 
+</script>
+</body>
+</html>
