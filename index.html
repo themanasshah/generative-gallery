@@ -621,8 +621,8 @@ const fragCode = `
 // ══════════════════════════════════════════════════════════
 //  SKETCH GLOBALS & STATE
 // ══════════════════════════════════════════════════════════
-let drawHandLandmarks = null; // Right Hand = Draw
-let moveHandLandmarks = null; // Left Hand = Move
+let drawHandLandmarks = null; 
+let moveHandLandmarks = null; 
 const videoEl = document.getElementById('input_video');
 
 const GRID_SIZE = 20;           
@@ -755,8 +755,24 @@ new p5(function(p) {
     if (window.APP_STATE.bgMode === 'camera') {
       p.translate(p.width, 0);
       p.scale(-1, 1);
-      if (videoEl.videoWidth > 0) {
-        p.drawingContext.drawImage(videoEl, 0, 0, p.width, p.height);
+      if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        let videoRatio = videoEl.videoWidth / videoEl.videoHeight;
+        let canvasRatio = p.width / p.height;
+
+        let drawWidth, drawHeight;
+
+        if (videoRatio > canvasRatio) {
+          drawHeight = p.height;
+          drawWidth = p.height * videoRatio;
+        } else {
+          drawWidth = p.width;
+          drawHeight = p.width / videoRatio;
+        }
+
+        let x = (p.width - drawWidth) / 2;
+        let y = (p.height - drawHeight) / 2;
+
+        p.drawingContext.drawImage(videoEl, x, y, drawWidth, drawHeight);
       }
     } else if (window.APP_STATE.bgMode === 'black') {
       p.background(0); 
@@ -781,7 +797,7 @@ new p5(function(p) {
         drawSmoothedFx = rawFx;
         drawSmoothedFy = rawFy;
       } else {
-        drawSmoothedFx = p.lerp(drawSmoothedFx, rawFx, 0.5); // Highly responsive
+        drawSmoothedFx = p.lerp(drawSmoothedFx, rawFx, 0.5); 
         drawSmoothedFy = p.lerp(drawSmoothedFy, rawFy, 0.5);
       }
 
@@ -880,7 +896,7 @@ new p5(function(p) {
         movePrevFx = rawFx;
         movePrevFy = rawFy;
       } else {
-        moveSmoothedFx = p.lerp(moveSmoothedFx, rawFx, 0.5); // Highly responsive
+        moveSmoothedFx = p.lerp(moveSmoothedFx, rawFx, 0.5); 
         moveSmoothedFy = p.lerp(moveSmoothedFy, rawFy, 0.5);
       }
 
@@ -898,11 +914,10 @@ new p5(function(p) {
         selectedShape = null;
       }
 
-      // Hover Check (Expanded for easier grabbing, skipped if dragging)
       if (!isDragging) {
         hoveredShape = null;
         for (let i = shapes.length - 1; i >= 0; i--) {
-          let hitPoly = getOffsetPolygon(shapes[i].pts, 15); // Hit tolerance
+          let hitPoly = getOffsetPolygon(shapes[i].pts, 15); 
           if (pointInPolygon({x: moveSmoothedFx, y: moveSmoothedFy}, hitPoly)) {
             hoveredShape = shapes[i];
             break;
@@ -915,7 +930,6 @@ new p5(function(p) {
         selectedShape = hoveredShape;
       }
 
-      // Smooth Delta Movement 
       if (isDragging && selectedShape && movePrevFx !== null) {
         let dx = moveSmoothedFx - movePrevFx;
         let dy = moveSmoothedFy - movePrevFy;
@@ -993,17 +1007,13 @@ new p5(function(p) {
       p.endShape();
       p.pop();
     }
-
-    // ── Visual Polish: Pointer Trackers ─────────────
     
-    // Drawing Hand Pointer (Right Hand)
     if (drawSmoothedFx !== null) {
       p.noStroke();
       p.fill(isDrawing ? '#34C759' : '#FF2D55');
       p.ellipse(drawSmoothedFx, drawSmoothedFy, 12, 12);
     }
 
-    // Moving Hand Pointer (Left Hand)
     if (moveSmoothedFx !== null) {
       p.noStroke();
       p.fill(isDragging ? '#5AC8FA' : '#FFFFFF'); 
@@ -1148,9 +1158,8 @@ new p5(function(p) {
     p.image(shaderGraphics, 0, 0);
     ctx.restore();
 
-    // ── Layer 3: Inner Sharp Dark Line (Important Detail) ──
     ctx.strokeStyle = '#141414'; 
-    ctx.lineWidth = 1.0; 
+    ctx.lineWidth = 0.75;
     ctx.lineJoin = 'miter';
     ctx.beginPath();
     ctx.moveTo(insetPts[0].x, insetPts[0].y);
@@ -1158,8 +1167,7 @@ new p5(function(p) {
     ctx.closePath();
     ctx.stroke();
 
-    // ── Layer 4: Outer Metallic Gradient Border Steps ──
-    let borderSteps = 2; // 50% thinner
+    let borderSteps = 4;
     for (let i = 0; i < borderSteps; i++) {
       let t = i / borderSteps;
       let shade = p.map(t, 0, 1, 230, 80); 
@@ -1171,7 +1179,7 @@ new p5(function(p) {
       ctx.strokeStyle = grad;
       ctx.lineWidth = 0.75; 
       
-      let offPts = getOffsetPolygon(sh.pts, i * 0.3); // 50% tighter offset scale
+      let offPts = getOffsetPolygon(sh.pts, i * 0.6); 
       
       ctx.beginPath();
       ctx.moveTo(offPts[0].x, offPts[0].y);
